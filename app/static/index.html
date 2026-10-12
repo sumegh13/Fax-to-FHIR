@@ -30,7 +30,17 @@ button { font: inherit; cursor: pointer; }
 .top { display: flex; align-items: baseline; gap: 20px; padding: 14px 24px; border-bottom: 1px solid var(--rule); }
 .top h1 { font-size: 21px; margin: 0; }
 .top .status { color: var(--muted); font-size: 15px; }
-.top .new { margin-left: auto; background: none; border: 1px solid var(--rule); border-radius: 6px; padding: 4px 12px; color: var(--ink); }
+.keystate { margin-left: auto; font-size: 14px; color: var(--muted); }
+.keystate.ok { color: var(--ok); }
+.keybtn { background: none; border: 1px solid var(--rule); border-radius: 6px; padding: 4px 12px; color: var(--ink); }
+dialog { border: 1px solid var(--rule); border-radius: 10px; padding: 24px; max-width: 480px; width: calc(100% - 32px); color: var(--ink); background: var(--sheet); }
+dialog::backdrop { background: #1c2a3166; }
+dialog form { display: grid; gap: 10px; }
+dialog h2 { margin: 0; font-size: 20px; }
+dialog .label { font-weight: 700; font-size: 15px; }
+dialog .remember { display: flex; gap: 8px; align-items: center; font-size: 15px; }
+dialog .small { font-size: 14px; }
+.top .new { background: none; border: 1px solid var(--rule); border-radius: 6px; padding: 4px 12px; color: var(--ink); }
 
 main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr); height: calc(100% - 56px); }
 
@@ -103,8 +113,27 @@ main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.8
 <header class="top">
   <h1>Fax intake</h1>
   <span class="status" id="status">Drop a fax to read it into the patient record.</span>
+  <span class="keystate" id="keystate"></span>
+  <button class="keybtn" id="keybtn">API key</button>
   <button class="new" id="new" hidden>Next fax</button>
 </header>
+<dialog id="keydlg" aria-labelledby="keytitle">
+  <form method="dialog" id="keyform">
+    <h2 id="keytitle">Your Claude API key</h2>
+    <p class="lede">Faxes you upload are read by Claude Haiku 5.5 using this key, at about $0.002 per fax.
+      The key is sent with each upload to this app's server, used for that one request, and never stored there.</p>
+    <label for="keyinput" class="label">API key</label>
+    <input id="keyinput" type="password" class="val" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+    <label class="remember"><input type="checkbox" id="keyremember"> Remember on this device</label>
+    <p class="lede small">Without this, it is kept only until you close the tab. Get a key at platform.claude.com.</p>
+    <p class="err" id="keyerr"></p>
+    <div class="row">
+      <button class="btn" id="keysave" value="save">Save key</button>
+      <button class="btn quiet" id="keyclear" value="clear" type="button">Remove key</button>
+      <button class="btn quiet" value="cancel" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
 <main>
   <div class="desk" id="desk">
     <div class="drop" id="drop">
@@ -119,6 +148,8 @@ main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.8
       <h2>How this works</h2>
       <p class="lede">Each field is read off the fax with a confidence score. Fields the reader is unsure of are
         highlighted on the fax and listed here for you to check. Nothing is written to the record until you commit.</p>
+      <p class="lede">To read your own fax with Claude, add your Claude API key with the API key button. Without a key you
+        can still open the sample faxes; they are read by a stand-in that imitates the model's mistakes.</p>
     </section>
   </aside>
 </main>
@@ -145,6 +176,37 @@ function label(key) {
   return key;
 }
 const $ = (s, el = document) => el.querySelector(s);
+
+// Visitor's own API key: sessionStorage by default, localStorage when "remember" is ticked.
+const KEY = "fax-to-fhir.anthropic-key";
+const store = {
+  get() { try { return localStorage.getItem(KEY) || sessionStorage.getItem(KEY) || ""; } catch { return ""; } },
+  remembered() { try { return !!localStorage.getItem(KEY); } catch { return false; } },
+  set(v, remember) {
+    try { localStorage.removeItem(KEY); sessionStorage.removeItem(KEY); (remember ? localStorage : sessionStorage).setItem(KEY, v); } catch { }
+  },
+  clear() { try { localStorage.removeItem(KEY); sessionStorage.removeItem(KEY); } catch { } },
+};
+let serverKey = false;
+function showKeyState() {
+  const ks = $("#keystate");
+  if (store.get()) { ks.textContent = "Reading with your API key"; ks.className = "keystate ok"; }
+  else if (serverKey) { ks.textContent = "Reading with the demo's API key"; ks.className = "keystate"; }
+  else { ks.textContent = "No API key: sample faxes only"; ks.className = "keystate"; }
+}
+fetch("/api/config").then(r => r.json()).then(c => { serverKey = c.server_key; showKeyState(); }).catch(showKeyState);
+const dlg = $("#keydlg");
+$("#keybtn").addEventListener("click", () => {
+  $("#keyinput").value = store.get(); $("#keyremember").checked = store.remembered(); $("#keyerr").textContent = "";
+  dlg.showModal(); $("#keyinput").focus();
+});
+$("#keyform").addEventListener("submit", ev => {
+  if (ev.submitter?.value !== "save") return;
+  const v = $("#keyinput").value.trim();
+  if (!v.startsWith("sk-ant-")) { ev.preventDefault(); $("#keyerr").textContent = "Claude API keys start with sk-ant-."; return; }
+  store.set(v, $("#keyremember").checked); showKeyState();
+});
+$("#keyclear").addEventListener("click", () => { store.clear(); $("#keyinput").value = ""; showKeyState(); dlg.close(); });
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 let job = null;            // server view
@@ -161,14 +223,15 @@ const DOC_SHORT = { referral: "Referral", lab: "Lab report", prior_auth: "Prior 
 fetch("/api/samples").then(r => r.json()).then(list => {
   if (!list.length || !$("#samples")) return;
   $("#samples").innerHTML = `<span>No fax to hand? Try a sample:</span>` + list.map(x =>
-    `<a href="/?sample=${encodeURIComponent(x.file)}">${DOC_SHORT[x.doc_type] || x.doc_type}, ${x.level === "ugly" ? "heavily degraded" : x.level + " scan"}</a>`).join("");
+    `<a href="/?sample=${encodeURIComponent(x.file)}">${DOC_SHORT[x.doc_type] || x.doc_type} for ${esc(x.patient)}${x.level === "ugly" ? ", heavily degraded" : ""}</a>`).join("");
 }).catch(() => {});
 const sampleName = new URLSearchParams(location.search).get("sample");
 if (sampleName) fetch(`/api/samples/${encodeURIComponent(sampleName)}`).then(r => r.blob())
   .then(b => upload(new File([b], sampleName, { type: "image/png" })));
 
 async function api(path, body) {
-  const r = await fetch(path, body instanceof FormData ? { method: "POST", body }
+  const key = store.get();
+  const r = await fetch(path, body instanceof FormData ? { method: "POST", body, headers: key ? { "X-Anthropic-Key": key } : {} }
     : body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(typeof data.detail === "string" ? data.detail : data.detail?.message || r.statusText), { data });
@@ -184,6 +247,7 @@ async function upload(file) {
   } catch (e) {
     $("#desk").innerHTML = `<p class="working">${esc(e.message)}</p>`;
     $("#status").textContent = "Could not read that file.";
+    if (/API key/.test(e.message)) $("#keybtn").click();
     $("#new").hidden = false;
     return;
   }

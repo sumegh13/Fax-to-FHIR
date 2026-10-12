@@ -16,7 +16,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 import anthropic
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -54,24 +54,47 @@ def _take_quota():
 app = FastAPI(title="Fax to FHIR")
 
 
-def extract(image: Path, original_name: str) -> dict:
-    if EXTRACTOR == "simulated":
-        stem = Path(original_name).name.split(".")[0]
-        truth = FAXES / f"{stem}.truth.json"
-        if not truth.exists():
-            raise HTTPException(422, f"The simulated extractor only reads generated faxes; "
-                                     f"no ground truth for '{stem}'. Drop a file from data/faxes/.")
-        return simulate_fax(json.loads(truth.read_text()))
-    if EXTRACTOR == "claude":
-        _take_quota()
-        from extractor.claude import RefusalError, extract as claude_extract
-        try:
-            return claude_extract(image, Path(original_name).name.split(".")[0])
-        except RefusalError as e:
-            raise HTTPException(422, f"The model declined to read this fax: {e}")
-        except anthropic.APIError as e:
-            raise HTTPException(502, f"Extraction failed: {e}")
-    raise HTTPException(500, f"Extractor '{EXTRACTOR}' is not configured.")
+def _simulated(original_name: str) -> dict:
+    stem = Path(original_name).name.split(".")[0]
+    truth = FAXES / f"{stem}.truth.json"
+    if not truth.exists():
+        raise HTTPException(422, "Without an API key only the sample faxes can be read. "
+                                 "Add your Claude API key to read your own fax.")
+    return simulate_fax(json.loads(truth.read_text()))
+
+
+def extract(image: Path, original_name: str, user_key: str | None) -> dict:
+    """Read with the visitor's key if they gave one, else the server's key, else simulate.
+
+    A visitor's key is used for this one request and never written anywhere.
+    """
+    if not user_key and EXTRACTOR == "simulated":
+        return _simulated(original_name)
+    if not user_key:
+        _take_quota()  # only the host's own key is rate limited
+    from extractor.claude import RefusalError, extract as claude_extract
+    client = anthropic.Anthropic(api_key=user_key, max_retries=1) if user_key else None
+    try:
+        return claude_extract(image, Path(original_name).name.split(".")[0], client)
+    except RefusalError as e:
+        raise HTTPException(422, f"The model declined to read this fax: {e}")
+    except anthropic.AuthenticationError:
+        raise HTTPException(401, "That API key was rejected. Check it in API key settings.")
+    except anthropic.PermissionDeniedError:
+        raise HTTPException(403, "That API key is not allowed to use Claude Haiku 5.5.")
+    except anthropic.RateLimitError:
+        raise HTTPException(429, "The API key hit its rate limit. Wait a minute and try again.")
+    except anthropic.APIError as e:
+        raise HTTPException(502, f"Extraction failed: {e.message if hasattr(e, 'message') else e}")
+
+
+def _user_key(header: str | None) -> str | None:
+    key = (header or "").strip()
+    if not key:
+        return None
+    if not key.startswith("sk-ant-") or len(key) > 300:
+        raise HTTPException(400, "That does not look like a Claude API key (they start with sk-ant-).")
+    return key
 
 
 def job_dir(job_id: str) -> Path:
@@ -103,8 +126,15 @@ def review_view(job_id: str, extraction: dict) -> dict:
             "resource_types": sorted({e["resource"]["resourceType"] for e in bundle["entry"]})}
 
 
+@app.get("/api/config")
+def config():
+    """What the page needs to explain where reads come from."""
+    return {"server_key": EXTRACTOR == "claude", "model": "claude-haiku-5-5"}
+
+
 @app.post("/api/faxes")
-async def upload(file: UploadFile):
+def upload(file: UploadFile, x_anthropic_key: str | None = Header(default=None)):
+    user_key = _user_key(x_anthropic_key)
     ext = Path(file.filename or "").suffix.lower()
     if ext not in IMAGE_TYPES | {".pdf"}:
         raise HTTPException(415, "Upload a fax as PDF, PNG, JPG or TIFF.")
@@ -126,7 +156,7 @@ async def upload(file: UploadFile):
     else:
         img = Image.open(raw)
     img.convert("L").save(d / "fax.png")
-    extraction = extract(d / "fax.png", file.filename)
+    extraction = extract(d / "fax.png", file.filename, user_key)
     (d / "extraction.json").write_text(json.dumps(extraction))
     view = review_view(job_id, extraction)
     if pages > 1:
@@ -218,7 +248,8 @@ def samples():
         of_type = sorted((r for r in rows if r["doc_type"] == doc),
                          key=lambda r: (order[r["level"]], -r["n_handwritten"], r["fax_id"]))
         picks += of_type[:2]
-    return [{"file": f"{r['fax_id']}.png", "doc_type": r["doc_type"], "level": r["level"]} for r in picks]
+    return [{"file": f"{r['fax_id']}.png", "doc_type": r["doc_type"], "level": r["level"],
+             "patient": r["fax_id"].split("-")[1].title()} for r in picks]
 
 
 @app.get("/api/samples/{name}")
