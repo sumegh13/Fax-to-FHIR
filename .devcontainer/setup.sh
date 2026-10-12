@@ -15,6 +15,7 @@ python -m venv .venv
 
 docker compose up -d
 [ -d data/synthea/fhir ] || ./scripts/generate_patients.sh 50
+./scripts/fetch_fonts.sh
 [ -f data/faxes/manifest.jsonl ] || .venv/bin/python -m faxgen
 
 count=$(curl -sf --retry 60 --retry-delay 5 --retry-all-errors 'http://localhost:8080/fhir/Patient?_summary=count' \

@@ -117,6 +117,7 @@ docker compose up -d
 ./scripts/load_hapi.sh
 
 # Faxes with ground truth
+./scripts/fetch_fonts.sh
 .venv/bin/python -m faxgen                    # add --debug-boxes to draw truth boxes
 
 # Extract and score
