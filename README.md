@@ -87,18 +87,17 @@ Synthea patients ──> faxgen ──> noisy fax PNG + truth.json
 
 ## Try it in GitHub Codespaces
 
-1. On the repository page choose Code, Codespaces, Create codespace on main. A 4-core machine is requested.
-2. The first start takes about 15 minutes: it installs dependencies, generates 50 synthetic patients and their
+1. Add your Claude API key as a Codespaces secret named `ANTHROPIC_API_KEY`
+   (GitHub, Settings, Codespaces, Secrets, with access to this repository). Without it the app runs a simulated
+   extractor.
+2. On the repository page choose Code, Codespaces, Create codespace on main. A 4-core machine is requested.
+3. The first start takes about 15 minutes: it installs dependencies, generates 50 synthetic patients and their
    faxes, and loads the FHIR server. Later starts take about a minute.
-3. The review screen opens on port 8000. To share it, open the Ports panel, right-click port 8000 and set
+4. The review screen opens on port 8000. To share it, open the Ports panel, right-click port 8000 and set
    Port Visibility to Public, then copy the forwarded address.
 
-The hosted app has no API key of its own. Each visitor adds their own Claude API key under "API key" on the page;
-it is kept in their browser, sent with each upload, used for that one request and never stored on the server.
-Without a key, visitors can still open the sample faxes, which are read by the simulated extractor.
-
 The link works only while the codespace is running; it stops after the idle timeout (30 minutes by default,
-adjustable up to 4 hours in your Codespaces settings).
+adjustable up to 4 hours in your Codespaces settings). Model calls are capped at `MAX_FAXES_PER_HOUR` (default 60).
 
 ## Running it locally
 
