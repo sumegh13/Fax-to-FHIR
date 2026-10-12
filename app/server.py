@@ -65,7 +65,8 @@ def job_dir(job_id: str) -> Path:
 
 def review_view(job_id: str, extraction: dict) -> dict:
     """Build the bundle, then mark which fields need a human."""
-    bundle, issues, patient_ref = prepare(extraction)
+    bundle, issues, patient_ref, reconciled = prepare(extraction)
+    on_chart = {r["key"]: r["existing"] for r in reconciled}
     issue_by_key = {}
     for i in issues:
         issue_by_key.setdefault(i["key"], []).append(i["reason"])
@@ -74,12 +75,13 @@ def review_view(job_id: str, extraction: dict) -> dict:
         reasons = list(issue_by_key.get(f["key"], []))
         if f.get("confidence", 1) < THRESHOLD:
             reasons.insert(0, f"Low confidence ({f['confidence']:.0%})")
-        fields.append({**f, "reasons": reasons, "needs_review": bool(reasons)})
+        fields.append({**f, "reasons": reasons, "needs_review": bool(reasons), "on_chart": on_chart.get(f["key"])})
     known = {f["key"] for f in extraction["fields"]}
     general = [i for i in issues if i["key"] not in known]
     return {"job_id": job_id, "fax_id": extraction["fax_id"], "doc_type": extraction["doc_type"],
             "extractor": extraction.get("extractor"), "threshold": THRESHOLD, "patient_ref": patient_ref,
             "fields": fields, "issues": general, "resource_count": len(bundle["entry"]),
+            "on_chart_count": len(reconciled),
             "resource_types": sorted({e["resource"]["resourceType"] for e in bundle["entry"]})}
 
 
@@ -140,7 +142,7 @@ def commit(job_id: str, edits: Edits):
     if unreviewed and not edits.force:
         raise HTTPException(409, {"message": "Some low-confidence fields have not been reviewed.",
                                   "issues": [{"key": k, "reason": "not reviewed"} for k in unreviewed]})
-    bundle, issues, patient_ref = prepare(extraction)
+    bundle, issues, patient_ref, _ = prepare(extraction)
     if issues and not edits.force:
         raise HTTPException(409, {"message": "Fix these before committing.", "issues": issues})
     try:

@@ -108,3 +108,44 @@ def undo(fax_id: str) -> list[str]:
             deleted.append(r["ref"])
     path.unlink()
     return deleted
+
+
+def chart_index(patient_ref: str) -> dict:
+    """What the patient's chart already holds, keyed the way the mapper looks things up.
+
+    {"condition": {key: ref}, "medication": {key: ref}, "lab": {(key, date): ref}, "lab_values": {ref: value}}
+    where key is "system|code" when coded, else normalized text.
+    """
+    from .terminology import norm
+
+    pid = patient_ref.split("/")[1]
+
+    def keys(cc: dict) -> list[str]:
+        ks = [f"{c.get('system')}|{c.get('code')}" for c in cc.get("coding", []) if c.get("code")]
+        for t in [cc.get("text")] + [c.get("display") for c in cc.get("coding", [])]:
+            if t:
+                ks.append(norm(t))
+        return ks
+
+    def fetch(query: str) -> list[dict]:
+        out, url = [], query
+        while url:
+            page = request("GET", url)
+            out += [e["resource"] for e in page.get("entry", [])]
+            url = next((l["url"] for l in page.get("link", []) if l["relation"] == "next"), None)
+        return out
+
+    idx = {"condition": {}, "medication": {}, "lab": {}, "lab_values": {}}
+    for c in fetch(f"Condition?patient={pid}&clinical-status=active&_count=200"):
+        for k in keys(c.get("code", {})):
+            idx["condition"].setdefault(k, f"Condition/{c['id']}")
+    for m in fetch(f"MedicationRequest?patient={pid}&status=active&_count=200"):
+        for k in keys(m.get("medicationCodeableConcept", {})):
+            idx["medication"].setdefault(k, f"MedicationRequest/{m['id']}")
+    for o in fetch(f"Observation?patient={pid}&category=laboratory&_count=500"):
+        day = o.get("effectiveDateTime", "")[:10]
+        for k in keys(o.get("code", {})):
+            idx["lab"].setdefault((k, day), f"Observation/{o['id']}")
+        if "valueQuantity" in o:
+            idx["lab_values"][f"Observation/{o['id']}"] = o["valueQuantity"]["value"]
+    return idx

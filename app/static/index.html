@@ -75,6 +75,7 @@ main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.8
 .readlist .v { font-family: var(--read); overflow-wrap: anywhere; }
 .readlist .c { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .readlist li.hot { background: #e5eef6; }
+.onfile { display: inline-block; margin-left: 8px; font: 13px var(--ui); color: var(--muted); border: 1px solid var(--rule); border-radius: 4px; padding: 0 6px; }
 
 .foot { margin-top: auto; position: sticky; bottom: 0; background: var(--sheet); border-top: 1px solid var(--rule); padding: 16px 24px; display: flex; gap: 14px; align-items: center; }
 .foot .note { color: var(--muted); font-size: 14px; flex: 1; }
@@ -209,6 +210,7 @@ function render() {
     <div class="check" data-key="${esc(f.key)}">
       <div class="label">${esc(label(f.key))}</div>
       <div class="why">${f.reasons.map(esc).join(" · ")}</div>
+      ${f.on_chart ? `<div class="why">Matches ${esc(f.on_chart)} already in the chart</div>` : ""}
       <img class="crop" alt="Fax region for ${esc(label(f.key))}" data-crop="${esc(f.key)}">
       <div class="row">
         <input class="val" value="${esc(f.value)}" aria-label="${esc(label(f.key))}">
@@ -232,7 +234,7 @@ function render() {
     <section>
       <h2>Read with confidence</h2>
       <ul class="readlist">${auto.map(f => `
-        <li data-key="${esc(f.key)}"><span class="k">${esc(label(f.key))}</span><span class="v">${esc(f.value)}</span><span class="c">${Math.round((f.confidence ?? 1) * 100)}%</span></li>`).join("")}
+        <li data-key="${esc(f.key)}"><span class="k">${esc(label(f.key))}</span><span class="v">${esc(f.value)}${f.on_chart ? `<span class="onfile" title="${esc(f.on_chart)}">on file</span>` : ""}</span><span class="c">${Math.round((f.confidence ?? 1) * 100)}%</span></li>`).join("")}
       </ul>
     </section>
     <div class="foot">
@@ -281,7 +283,8 @@ function sync() {
   const left = pending().length;
   $("#commit").disabled = left > 0;
   $("#note").textContent = left ? `${left} field${left === 1 ? "" : "s"} still to check.`
-    : `Will write ${job.resource_count} FHIR resources: ${job.resource_types.join(", ")}.`;
+    : `Will write ${job.resource_count} FHIR resources: ${job.resource_types.join(", ")}.`
+      + (job.on_chart_count ? ` ${job.on_chart_count} item${job.on_chart_count === 1 ? " is" : "s are"} already on file and will be linked, not copied.` : "");
 }
 
 function linkHover() {

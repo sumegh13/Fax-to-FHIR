@@ -16,26 +16,31 @@ from .normalize import to_date, to_gender, to_number
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def prepare(extraction: dict) -> tuple[dict, list, str | None]:
-    """Match the patient, build the bundle, run validation. Returns (bundle, issues, matched_ref)."""
+def prepare(extraction: dict) -> tuple[dict, list, str | None, list]:
+    """Match the patient, build the bundle, run validation.
+
+    Returns (bundle, issues, matched_ref, reconciled); reconciled lists fax items already on the chart.
+    """
     s, _ = group(extraction["fields"])
     matches = client.match_patient(s.get("patient.family", ""), s.get("patient.given", ""),
                                    s.get("patient.birthDate", ""))
     ref = f"Patient/{matches[0]['id']}" if len(matches) == 1 else None
-    bundle, issues = build_bundle(extraction, ref)
+    chart = client.chart_index(ref) if ref else None
+    bundle, issues, reconciled = build_bundle(extraction, ref, chart)
     if len(matches) > 1:
         issues.append({"key": "patient", "value": [m["id"] for m in matches],
                        "reason": f"{len(matches)} patients match name+DOB"})
     for p in client.validate(bundle):
         issues.append({"key": f"bundle[{p['entry']}].{p['resourceType']}", "value": None,
                        "reason": p["diagnostics"]})
-    return bundle, issues, ref
+    return bundle, issues, ref, reconciled
 
 
 def cmd_commit(args):
     extraction = json.loads(Path(args.file).read_text())
-    bundle, issues, ref = prepare(extraction)
-    print(f"patient: {ref or 'new'}   resources: {len(bundle['entry'])}   issues: {len(issues)}")
+    bundle, issues, ref, reconciled = prepare(extraction)
+    print(f"patient: {ref or 'new'}   resources: {len(bundle['entry'])}   already on chart: {len(reconciled)}"
+          f"   issues: {len(issues)}")
     for i in issues:
         print(f"  ! {i['key']}: {i['reason']}  ({i['value']!r})")
     if args.dry_run:
@@ -77,14 +82,15 @@ def cmd_roundtrip(args):
     ok = 0
     for f in files:
         ext = json.loads(f.read_text())
-        bundle, issues, ref = prepare(ext)
+        bundle, issues, ref, reconciled = prepare(ext)
         log = client.commit(bundle, ext["fax_id"])
         errs = read_back(group(ext["fields"])[0], log)
         new = sum(r["new"] for r in log["resources"])
         client.undo(ext["fax_id"])
         flag = "ok " if not errs and ref else "ERR"
         ok += flag == "ok "
-        print(f"{flag} {ext['fax_id']:<42} matched={bool(ref)} new={new:<3} issues={len(issues)} {errs or ''}")
+        print(f"{flag} {ext['fax_id']:<42} matched={bool(ref)} new={new:<3} on_chart={len(reconciled):<3} "
+              f"issues={len(issues)} {errs or ''}")
         for i in issues:
             print(f"      ! {i['key']}: {i['reason']}")
     print(f"{ok}/{len(files)} faxes committed, matched to their patient and read back cleanly")

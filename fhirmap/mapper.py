@@ -13,7 +13,7 @@ import uuid
 from collections import defaultdict
 
 from . import normalize as nz
-from .terminology import lookup
+from .terminology import lookup, norm
 
 TAG = {"system": "urn:fax-to-fhir", "code": "fax-ingest"}
 
@@ -42,10 +42,12 @@ def group(fields: list[dict]) -> tuple[dict, dict]:
 
 
 class Builder:
-    def __init__(self, fax_id: str, patient_ref: str | None):
+    def __init__(self, fax_id: str, patient_ref: str | None, chart: dict | None = None):
         self.fax_id = fax_id
         self.entries: list[dict] = []
         self.issues: list[dict] = []
+        self.chart = chart or {"condition": {}, "medication": {}, "lab": {}, "lab_values": {}}
+        self.reconciled: list[dict] = []  # fax items already in the chart, not written again
         self.patient_ref = patient_ref  # "Patient/123" if matched, else set by add_patient
 
     def add(self, resource: dict, if_none_exist: str | None = None) -> str:
@@ -62,6 +64,16 @@ class Builder:
 
     def subject(self) -> dict:
         return {"reference": self.patient_ref}
+
+    def on_chart(self, category: str, key: str, coding: dict | None, text: str, day: str | None = None):
+        """Reference to an existing chart entry for the same concept, if there is one."""
+        cands = ([f"{coding['system']}|{coding['code']}"] if coding else []) + [norm(text)]
+        for k in cands:
+            ref = self.chart[category].get((k, day) if category == "lab" else k)
+            if ref:
+                self.reconciled.append({"key": key, "value": text, "existing": ref})
+                return ref
+        return None
 
     def bundle(self) -> dict:
         return {"resourceType": "Bundle", "type": "transaction", "entry": self.entries}
@@ -102,6 +114,9 @@ class Builder:
 
     def condition(self, key: str, text: str) -> str:
         coding, score = lookup("condition", text)
+        existing = self.on_chart("condition", key, coding, text)
+        if existing:
+            return existing
         if not coding:
             self.issue(key, text, f"no SNOMED match (best score {score})")
         return self.add({
@@ -131,6 +146,11 @@ class Builder:
 
     def med_request(self, key: str, text: str, extra: dict | None = None) -> str:
         coding, score = lookup("medication", text)
+        # A medication-list entry already on the chart is not re-ordered; a prior-auth request (extra) always is.
+        if not extra:
+            existing = self.on_chart("medication", key, coding, text)
+            if existing:
+                return existing
         if not coding:
             self.issue(key, text, f"no RxNorm match (best score {score})")
         return self.add({"resourceType": "MedicationRequest", "status": "active", "intent": "order",
@@ -138,10 +158,13 @@ class Builder:
                          **(extra or {})})
 
 
-def build_bundle(extraction: dict, patient_ref: str | None = None) -> tuple[dict, list[dict]]:
-    """patient_ref: existing 'Patient/<id>' to attach to; None creates a new Patient."""
+def build_bundle(extraction: dict, patient_ref: str | None = None,
+                 chart: dict | None = None) -> tuple[dict, list[dict], list[dict]]:
+    """patient_ref: existing 'Patient/<id>' to attach to; None creates a new Patient.
+    chart: client.chart_index() of that patient, so items already on file are referenced, not duplicated.
+    Returns (bundle, issues, reconciled)."""
     s, lists = group(extraction["fields"])
-    b = Builder(extraction["fax_id"], patient_ref)
+    b = Builder(extraction["fax_id"], patient_ref, chart)
     if not patient_ref:
         b.patient(s)
 
@@ -184,6 +207,17 @@ def build_bundle(extraction: dict, patient_ref: str | None = None) -> tuple[dict
         results = []
         for i, row in enumerate(lists.get("labs", [])):
             coding, score = lookup("lab", row.get("test", ""))
+            existing = b.on_chart("lab", f"labs[{i}].test", coding, row.get("test", ""), when) if when else None
+            if existing:
+                # Same test, same day already on file: reference it, but a different value means someone misread.
+                on_file = b.chart["lab_values"].get(existing)
+                read = nz.to_number(row.get("value", ""))
+                printed = row.get("value", "").strip()
+                places = len(printed.split(".")[1]) if "." in printed else 0
+                if on_file is not None and read is not None and round(on_file, places) != round(read, places):
+                    b.issue(f"labs[{i}].value", row.get("value"), f"chart has {on_file:g} for this test on {when}")
+                results.append({"reference": existing})
+                continue
             if not coding:
                 b.issue(f"labs[{i}].test", row.get("test"), f"no LOINC match (best score {score})")
             value = nz.to_number(row.get("value", ""))
@@ -235,4 +269,4 @@ def build_bundle(extraction: dict, patient_ref: str | None = None) -> tuple[dict
             b.add({"resourceType": "Coverage", "status": "active", "subscriberId": s["coverage.memberId"],
                    "beneficiary": b.subject(), "payor": [{"display": s.get("coverage.payer", "Unknown payer")}]})
 
-    return b.bundle(), b.issues
+    return b.bundle(), b.issues, b.reconciled
