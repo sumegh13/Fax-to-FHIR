@@ -9,7 +9,9 @@ only faxes from data/faxes/ can be processed.
 import json
 import os
 import shutil
+import time
 import uuid
+from collections import deque
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -34,6 +36,20 @@ EXTRACTOR = os.environ.get("EXTRACTOR", "claude" if os.environ.get("ANTHROPIC_AP
 THRESHOLD = float(os.environ.get("REVIEW_THRESHOLD", "0.8"))
 IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 FAX_DPI = 200  # fax "fine" mode; PDFs are rendered at this resolution
+# A shared demo link spends the host's API credit; cap model calls per rolling hour.
+MAX_FAXES_PER_HOUR = int(os.environ.get("MAX_FAXES_PER_HOUR", "60"))
+_recent_calls: deque[float] = deque()
+
+
+def _take_quota():
+    now = time.time()
+    while _recent_calls and now - _recent_calls[0] > 3600:
+        _recent_calls.popleft()
+    if len(_recent_calls) >= MAX_FAXES_PER_HOUR:
+        wait = int(3600 - (now - _recent_calls[0])) // 60 + 1 if _recent_calls else 60
+        raise HTTPException(429, f"This demo has read its limit of {MAX_FAXES_PER_HOUR} faxes this hour. "
+                                 f"Try again in about {wait} minutes.")
+    _recent_calls.append(now)
 
 app = FastAPI(title="Fax to FHIR")
 
@@ -47,6 +63,7 @@ def extract(image: Path, original_name: str) -> dict:
                                      f"no ground truth for '{stem}'. Drop a file from data/faxes/.")
         return simulate_fax(json.loads(truth.read_text()))
     if EXTRACTOR == "claude":
+        _take_quota()
         from extractor.claude import RefusalError, extract as claude_extract
         try:
             return claude_extract(image, Path(original_name).name.split(".")[0])
@@ -186,6 +203,22 @@ def patient_summary(pid: str):
         t = e["resource"]["resourceType"]
         counts[t] = counts.get(t, 0) + 1
     return {"patient": p, "counts": counts}
+
+
+@app.get("/api/samples")
+def samples():
+    """A few generated faxes for visitors to try: the noisiest of each document type."""
+    manifest = FAXES / "manifest.jsonl"
+    if not manifest.exists():
+        return []
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    order = {"ugly": 0, "mild": 1, "clean": 2}
+    picks = []
+    for doc in ("referral", "lab", "prior_auth"):
+        of_type = sorted((r for r in rows if r["doc_type"] == doc),
+                         key=lambda r: (order[r["level"]], -r["n_handwritten"], r["fax_id"]))
+        picks += of_type[:2]
+    return [{"file": f"{r['fax_id']}.png", "doc_type": r["doc_type"], "level": r["level"]} for r in picks]
 
 
 @app.get("/api/samples/{name}")

@@ -40,6 +40,8 @@ main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.8
 .drop.over { border-color: var(--focus); background: #dde6ec; color: var(--ink); }
 .drop strong { font-size: 26px; color: var(--ink); }
 .drop label { color: var(--focus); text-decoration: underline; cursor: pointer; }
+.samples { margin-top: 18px; display: grid; gap: 6px; justify-items: center; font-size: 15px; }
+.samples a { color: var(--focus); }
 .sheet { position: relative; max-width: 860px; margin: 0 auto; box-shadow: 0 1px 2px #0002, 0 8px 30px -12px #0003; background: #fff; }
 .sheet img { display: block; width: 100%; }
 .box { position: absolute; border-radius: 2px; }
@@ -109,6 +111,7 @@ main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.8
       <strong>Drop a fax here</strong>
       <span>PDF, PNG, JPG or TIFF &middot; or <label for="file">choose a file</label></span>
       <input type="file" id="file" accept="application/pdf,image/*" hidden>
+      <div class="samples" id="samples"></div>
     </div>
   </div>
   <aside class="panel" id="panel">
@@ -154,6 +157,12 @@ const drop = $("#drop"), fileInput = $("#file");
 drop.addEventListener("drop", ev => ev.dataTransfer.files[0] && upload(ev.dataTransfer.files[0]));
 fileInput.addEventListener("change", () => fileInput.files[0] && upload(fileInput.files[0]));
 $("#new").addEventListener("click", () => location.assign("/"));
+const DOC_SHORT = { referral: "Referral", lab: "Lab report", prior_auth: "Prior authorization" };
+fetch("/api/samples").then(r => r.json()).then(list => {
+  if (!list.length || !$("#samples")) return;
+  $("#samples").innerHTML = `<span>No fax to hand? Try a sample:</span>` + list.map(x =>
+    `<a href="/?sample=${encodeURIComponent(x.file)}">${DOC_SHORT[x.doc_type] || x.doc_type}, ${x.level === "ugly" ? "heavily degraded" : x.level + " scan"}</a>`).join("");
+}).catch(() => {});
 const sampleName = new URLSearchParams(location.search).get("sample");
 if (sampleName) fetch(`/api/samples/${encodeURIComponent(sampleName)}`).then(r => r.blob())
   .then(b => upload(new File([b], sampleName, { type: "image/png" })));
