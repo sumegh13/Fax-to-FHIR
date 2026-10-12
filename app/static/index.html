@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fax Intake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #e8edee;      /* desk */
+  --sheet: #fbfcfc;      /* panels */
+  --ink: #1c2a31;
+  --muted: #5d6d74;
+  --rule: #c9d3d6;
+  --marker: #f3e34f;     /* highlighter: fields a person must check */
+  --marker-ink: #6b5d00;
+  --ok: #2e7a58;
+  --bad: #b23f2c;
+  --focus: #2563a8;
+  --ui: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --read: "Courier Prime", ui-monospace, monospace;  /* values as read off the fax */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--paper); color: var(--ink); font: 17px/1.5 var(--ui); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+button { font: inherit; cursor: pointer; }
+
+.top { display: flex; align-items: baseline; gap: 20px; padding: 14px 24px; border-bottom: 1px solid var(--rule); }
+.top h1 { font-size: 21px; margin: 0; }
+.top .status { color: var(--muted); font-size: 15px; }
+.top .new { margin-left: auto; background: none; border: 1px solid var(--rule); border-radius: 6px; padding: 4px 12px; color: var(--ink); }
+
+main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr); height: calc(100% - 56px); }
+
+/* Fax side */
+.desk { overflow: auto; padding: 28px; }
+.drop { height: 100%; min-height: 420px; border: 2px dashed #9fb0b6; border-radius: 10px; display: grid; place-content: center; text-align: center; gap: 8px; color: var(--muted); }
+.drop.over { border-color: var(--focus); background: #dde6ec; color: var(--ink); }
+.drop strong { font-size: 26px; color: var(--ink); }
+.drop label { color: var(--focus); text-decoration: underline; cursor: pointer; }
+.sheet { position: relative; max-width: 860px; margin: 0 auto; box-shadow: 0 1px 2px #0002, 0 8px 30px -12px #0003; background: #fff; }
+.sheet img { display: block; width: 100%; }
+.box { position: absolute; border-radius: 2px; }
+.box.auto { outline: 1px solid #2e7a5833; }
+.box.mark { background: var(--marker); mix-blend-mode: multiply; cursor: pointer; transform-origin: left; animation: swipe .5s ease-out both; }
+.box.mark.fixed { background: #bfe3cf; }
+.box.hot { outline: 3px solid var(--focus); outline-offset: 2px; }
+@keyframes swipe { from { transform: scaleX(0); } }
+.working { text-align: center; color: var(--muted); padding-top: 30vh; }
+
+/* Review side */
+.panel { background: var(--sheet); border-left: 1px solid var(--rule); overflow: auto; display: flex; flex-direction: column; }
+.panel section { padding: 20px 24px; border-bottom: 1px solid var(--rule); }
+.panel h2 { font-size: 18px; margin: 0 0 4px; }
+.lede { color: var(--muted); margin: 0; font-size: 15px; }
+.who { font-size: 24px; font-weight: 700; margin: 2px 0 0; }
+
+.check { border-left: 6px solid var(--marker); background: #fffbe0; padding: 12px 14px; margin-top: 14px; border-radius: 0 6px 6px 0; }
+.check.done { border-color: var(--ok); background: #eef7f1; }
+.check .label { font-weight: 700; }
+.check .why { color: var(--marker-ink); font-size: 14px; }
+.check.done .why { color: var(--ok); }
+.crop { display: block; max-width: 100%; margin: 8px 0; border: 1px solid var(--rule); background: #fff; image-rendering: auto; }
+.row { display: flex; gap: 8px; align-items: center; }
+.val { flex: 1; min-width: 0; font: 18px var(--read); padding: 6px 8px; border: 1px solid #a9b6ba; border-radius: 4px; background: #fff; color: var(--ink); }
+.btn { border: 1px solid var(--ink); background: var(--ink); color: #fff; border-radius: 6px; padding: 6px 14px; }
+.btn.quiet { background: #fff; color: var(--ink); border-color: #a9b6ba; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.readlist { list-style: none; margin: 10px 0 0; padding: 0; }
+.readlist li { display: grid; grid-template-columns: 11em 1fr auto; gap: 10px; align-items: baseline; padding: 5px 0; border-top: 1px solid #e3e9eb; }
+.readlist .k { color: var(--muted); font-size: 14px; }
+.readlist .v { font-family: var(--read); overflow-wrap: anywhere; }
+.readlist .c { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.readlist li.hot { background: #e5eef6; }
+
+.foot { margin-top: auto; position: sticky; bottom: 0; background: var(--sheet); border-top: 1px solid var(--rule); padding: 16px 24px; display: flex; gap: 14px; align-items: center; }
+.foot .note { color: var(--muted); font-size: 14px; flex: 1; }
+.commit { font-size: 18px; padding: 10px 20px; }
+.err { color: var(--bad); font-size: 15px; margin: 8px 0 0; }
+
+.done-card h2 { color: var(--ok); font-size: 22px; }
+.res { list-style: none; padding: 0; margin: 12px 0; columns: 2; font-size: 15px; }
+.res a { color: var(--focus); }
+.res .reused { color: var(--muted); }
+
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; height: auto; }
+  .desk { padding: 16px; }
+  .panel { border-left: 0; border-top: 1px solid var(--rule); }
+  .readlist li { grid-template-columns: 1fr auto; }
+  .readlist .k { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { .box.mark { animation: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Fax intake</h1>
+  <span class="status" id="status">Drop a fax to read it into the patient record.</span>
+  <button class="new" id="new" hidden>Next fax</button>
+</header>
+<main>
+  <div class="desk" id="desk">
+    <div class="drop" id="drop">
+      <strong>Drop a fax here</strong>
+      <span>PNG, JPG or TIFF &middot; or <label for="file">choose a file</label></span>
+      <input type="file" id="file" accept="image/*" hidden>
+    </div>
+  </div>
+  <aside class="panel" id="panel">
+    <section>
+      <h2>How this works</h2>
+      <p class="lede">Each field is read off the fax with a confidence score. Fields the reader is unsure of are
+        highlighted on the fax and listed here for you to check. Nothing is written to the record until you commit.</p>
+    </section>
+  </aside>
+</main>
+
+<script>
+const LABELS = {
+  "patient.family": "Last name", "patient.given": "First name", "patient.birthDate": "Date of birth",
+  "patient.gender": "Sex", "patient.mrn": "MRN", "patient.phone": "Phone", "patient.address": "Address",
+  "referral.referring": "Referring provider", "referral.specialty": "Refer to", "referral.reason": "Reason for referral",
+  "referral.priority": "Priority", "lab.collected": "Collected", "lab.ordering": "Ordering provider",
+  "coverage.memberId": "Member ID", "coverage.payer": "Plan", "rx.medication": "Drug requested",
+  "rx.sig": "Directions", "rx.quantity": "Quantity", "rx.refills": "Refills", "rx.diagnosis": "Diagnosis",
+  "rx.prescriber": "Prescriber", "rx.npi": "NPI",
+};
+const DOC = { referral: "Referral", lab: "Lab report", prior_auth: "Prior authorization" };
+function label(key) {
+  if (LABELS[key]) return LABELS[key];
+  let m = key.match(/^(\w+)\[(\d+)\](?:\.(\w+))?$/);
+  if (!m) return key;
+  const n = +m[2] + 1;
+  if (m[1] === "conditions") return `Problem ${n}`;
+  if (m[1] === "medications") return `Medication ${n}`;
+  if (m[1] === "labs") return `Lab ${n} ${{ test: "test", value: "result", unit: "unit" }[m[3]]}`;
+  return key;
+}
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+let job = null;            // server view
+let edits = {};            // key -> confirmed value
+let img = null;            // loaded HTMLImageElement for crops
+
+const drop = $("#drop"), fileInput = $("#file");
+["dragenter", "dragover"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", ev => ev.dataTransfer.files[0] && upload(ev.dataTransfer.files[0]));
+fileInput.addEventListener("change", () => fileInput.files[0] && upload(fileInput.files[0]));
+$("#new").addEventListener("click", () => location.assign("/"));
+const sampleName = new URLSearchParams(location.search).get("sample");
+if (sampleName) fetch(`/api/samples/${encodeURIComponent(sampleName)}`).then(r => r.blob())
+  .then(b => upload(new File([b], sampleName, { type: "image/png" })));
+
+async function api(path, body) {
+  const r = await fetch(path, body instanceof FormData ? { method: "POST", body }
+    : body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(typeof data.detail === "string" ? data.detail : data.detail?.message || r.statusText), { data });
+  return data;
+}
+
+async function upload(file) {
+  $("#desk").innerHTML = `<p class="working">Reading ${esc(file.name)}…</p>`;
+  $("#status").textContent = "Reading fax…";
+  const fd = new FormData(); fd.append("file", file);
+  try {
+    job = await api("/api/faxes", fd);
+  } catch (e) {
+    $("#desk").innerHTML = `<p class="working">${esc(e.message)}</p>`;
+    $("#status").textContent = "Could not read that file.";
+    $("#new").hidden = false;
+    return;
+  }
+  edits = {};
+  img = new Image();
+  img.onload = render;
+  img.src = job.image.url;
+}
+
+function reviewFields() { return job.fields.filter(f => f.needs_review); }
+function pending() { return reviewFields().filter(f => !(f.key in edits)); }
+
+function render() {
+  const W = job.image.width, H = job.image.height;
+  const review = reviewFields();
+  $("#status").textContent = `${DOC[job.doc_type] || job.doc_type} · ${job.fields.length} fields read · ${review.length} to check`;
+  $("#new").hidden = false;
+
+  const boxes = job.fields.filter(f => f.bbox).map((f, i) => {
+    const [x0, y0, x1, y1] = f.bbox, pad = 6;
+    const style = `left:${(x0 - pad) / W * 100}%;top:${(y0 - pad) / H * 100}%;width:${(x1 - x0 + 2 * pad) / W * 100}%;height:${(y1 - y0 + 2 * pad) / H * 100}%;animation-delay:${0.25 + i * 0.03}s`;
+    return `<div class="box ${f.needs_review ? "mark" : "auto"}" data-key="${esc(f.key)}" style="${style}" title="${esc(label(f.key))}"></div>`;
+  }).join("");
+  $("#desk").innerHTML = `<div class="sheet"><img src="${job.image.url}" alt="Uploaded fax">${boxes}</div>`;
+
+  const s = job.fields.reduce((o, f) => (o[f.key] = f.value, o), {});
+  const who = [s["patient.given"], s["patient.family"]].filter(Boolean).join(" ") || "Unnamed patient";
+  const match = job.patient_ref
+    ? `Matches existing patient ${esc(job.patient_ref)}. New records will be added to their chart.`
+    : "No existing patient matches this name and date of birth. A new patient will be created.";
+
+  const reviewHtml = review.length ? review.map(f => `
+    <div class="check" data-key="${esc(f.key)}">
+      <div class="label">${esc(label(f.key))}</div>
+      <div class="why">${f.reasons.map(esc).join(" · ")}</div>
+      <img class="crop" alt="Fax region for ${esc(label(f.key))}" data-crop="${esc(f.key)}">
+      <div class="row">
+        <input class="val" value="${esc(f.value)}" aria-label="${esc(label(f.key))}">
+        <button class="btn confirm">Confirm</button>
+      </div>
+    </div>`).join("") : `<p class="lede">Every field was read with confidence above ${Math.round(job.threshold * 100)}%.</p>`;
+
+  const auto = job.fields.filter(f => !f.needs_review);
+  $("#panel").innerHTML = `
+    <section>
+      <p class="lede">${esc(DOC[job.doc_type] || job.doc_type)} for</p>
+      <p class="who">${esc(who)}</p>
+      <p class="lede">${match}</p>
+    </section>
+    <section>
+      <h2>Check ${review.length} field${review.length === 1 ? "" : "s"}</h2>
+      <p class="lede">Compare each value with the fax, correct it if needed, then confirm.</p>
+      ${reviewHtml}
+      ${job.issues.map(i => `<p class="err">${esc(i.key)}: ${esc(i.reason)}</p>`).join("")}
+    </section>
+    <section>
+      <h2>Read with confidence</h2>
+      <ul class="readlist">${auto.map(f => `
+        <li data-key="${esc(f.key)}"><span class="k">${esc(label(f.key))}</span><span class="v">${esc(f.value)}</span><span class="c">${Math.round((f.confidence ?? 1) * 100)}%</span></li>`).join("")}
+      </ul>
+    </section>
+    <div class="foot">
+      <span class="note" id="note"></span>
+      <button class="btn commit" id="commit">Commit to record</button>
+    </div>`;
+
+  document.querySelectorAll("[data-crop]").forEach(el => el.src = crop(job.fields.find(f => f.key === el.dataset.crop).bbox));
+  document.querySelectorAll(".check").forEach(card => {
+    const key = card.dataset.key, input = $(".val", card), btn = $(".confirm", card);
+    const confirm = () => {
+      if (key in edits) { delete edits[key]; } else { edits[key] = input.value.trim(); }
+      sync();
+    };
+    btn.addEventListener("click", confirm);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") confirm(); });
+    input.addEventListener("input", () => { if (key in edits) { delete edits[key]; sync(); } });
+  });
+  linkHover();
+  $("#commit").addEventListener("click", commit);
+  sync();
+}
+
+function crop(b) {
+  const pad = 24, [x0, y0, x1, y1] = b;
+  const sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad);
+  const sw = Math.min(img.naturalWidth, x1 + pad) - sx, sh = Math.min(img.naturalHeight, y1 + pad) - sy;
+  const c = document.createElement("canvas");
+  c.width = sw; c.height = sh;
+  c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  return c.toDataURL("image/png");
+}
+
+function sync() {
+  document.querySelectorAll(".check").forEach(card => {
+    const done = card.dataset.key in edits;
+    card.classList.toggle("done", done);
+    $(".confirm", card).textContent = done ? "Undo" : "Confirm";
+    $(".confirm", card).className = `btn confirm ${done ? "quiet" : ""}`;
+    const f = job.fields.find(f => f.key === card.dataset.key);
+    $(".why", card).textContent = done
+      ? (edits[f.key] === f.value ? "Confirmed as read" : `Corrected from “${f.value}”`)
+      : f.reasons.join(" · ");
+    document.querySelectorAll(`.box[data-key="${CSS.escape(f.key)}"]`).forEach(b => b.classList.toggle("fixed", done));
+  });
+  const left = pending().length;
+  $("#commit").disabled = left > 0;
+  $("#note").textContent = left ? `${left} field${left === 1 ? "" : "s"} still to check.`
+    : `Will write ${job.resource_count} FHIR resources: ${job.resource_types.join(", ")}.`;
+}
+
+function linkHover() {
+  const all = k => document.querySelectorAll(`[data-key="${CSS.escape(k)}"]`);
+  document.querySelectorAll("[data-key]").forEach(el => {
+    el.addEventListener("mouseenter", () => all(el.dataset.key).forEach(x => x.classList.add("hot")));
+    el.addEventListener("mouseleave", () => all(el.dataset.key).forEach(x => x.classList.remove("hot")));
+  });
+  document.querySelectorAll(".box").forEach(b => b.addEventListener("click", () => {
+    const target = $(`.panel [data-key="${CSS.escape(b.dataset.key)}"]`);
+    if (target) { target.scrollIntoView({ behavior: "smooth", block: "center" }); $(".val", target)?.focus(); }
+  }));
+}
+
+async function commit() {
+  const btn = $("#commit");
+  btn.disabled = true; btn.textContent = "Committing…";
+  try {
+    const r = await api(`/api/faxes/${job.job_id}/commit`, { values: edits });
+    showDone(r);
+  } catch (e) {
+    btn.textContent = "Commit to record"; btn.disabled = false;
+    const issues = e.data?.detail?.issues || [];
+    $("#note").innerHTML = `<span class="err">${esc(e.message)}${issues.map(i => `<br>${esc(label(i.key))}: ${esc(i.reason)}`).join("")}</span>`;
+  }
+}
+
+async function showDone(r) {
+  const pid = r.patient_ref.split("/")[1];
+  const created = r.resources.filter(x => x.new);
+  let summary = "";
+  try {
+    const p = await api(`/api/patient/${pid}`);
+    const n = p.patient.name?.[0] || {};
+    const total = Object.entries(p.counts).filter(([t]) => t !== "Patient").map(([t, c]) => `${c} ${t}`).join(", ");
+    summary = `<p class="who">${esc([...(n.given || []), n.family].join(" "))}</p>
+      <p class="lede">Born ${esc(p.patient.birthDate || "unknown")} · chart now holds ${esc(total)}</p>`;
+  } catch { }
+  $("#panel").innerHTML = `
+    <section class="done-card">
+      <h2>Committed to the record</h2>
+      ${summary}
+      <p class="lede">${r.matched_existing ? "Added to existing patient" : "Created new patient"}
+        <a href="${esc(r.fhir_base)}/${esc(r.patient_ref)}" target="_blank" rel="noopener">${esc(r.patient_ref)}</a>.
+        ${Object.keys(edits).length} field${Object.keys(edits).length === 1 ? "" : "s"} checked by you.</p>
+      <ul class="res">${r.resources.map(x => `<li class="${x.new ? "" : "reused"}">
+        <a href="${esc(r.fhir_base)}/${esc(x.ref)}" target="_blank" rel="noopener">${esc(x.ref)}</a>${x.new ? "" : " (existing)"}</li>`).join("")}</ul>
+      <div class="row">
+        <button class="btn" id="next">Next fax</button>
+        <button class="btn quiet" id="undo">Undo commit</button>
+      </div>
+      <p class="lede" id="undone"></p>
+    </section>`;
+  $("#status").textContent = `Committed ${created.length} new resources.`;
+  $("#next").addEventListener("click", () => location.assign("/"));
+  $("#undo").addEventListener("click", async () => {
+    const u = await api(`/api/faxes/${job.job_id}/undo`, {});
+    $("#undone").textContent = `Removed ${u.deleted.length} resources from the record.`;
+    $("#undo").disabled = true;
+    $("#status").textContent = "Commit undone.";
+  });
+}
+</script>
+</body>
+</html>

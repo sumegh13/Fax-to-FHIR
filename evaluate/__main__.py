@@ -76,7 +76,8 @@ def write_md(run: str, s: dict) -> str:
               "not any real model.", ""]
     o = s["overall"]
     L += [f"**{o['n']} fields** across {s['n_faxes']} faxes: accuracy **{pct(o['accuracy'])}** "
-          f"(exact string {pct(o['exact'])}, missing {pct(o['missing'])}).", ""]
+          f"(exact string {pct(o['exact'])}, missing {pct(o['missing'])})."
+          + (f" Extraction cost ${s['cost_usd']:.3f}." if s.get("cost_usd") else ""), ""]
     g = s["gate"]
     L += [f"**Review gate at confidence {g['threshold']}:** {pct(g['review_rate'])} of fields go to review, "
           f"catching {pct(g['errors_caught'])} of errors; {pct(g['auto_error_rate'])} of auto-committed "
@@ -109,7 +110,9 @@ def cmd_report(args):
          "gate": gate(rs, args.threshold),
          "sweep": [gate(rs, t / 100) for t in range(50, 100, 5)],
          "calibration": calibration(rs),
-         "extras": sum(1 for r in rs if r.get("extra"))}
+         "extras": sum(1 for r in rs if r.get("extra")),
+         "cost_usd": round(sum(json.loads(p.read_text()).get("usage", {}).get("cost_usd", 0)
+                               for p in (PRED / args.run).glob("*.json")), 4)}
     out = REPORTS / args.run
     out.mkdir(parents=True, exist_ok=True)
     cols = ["fax_id", "doc_type", "level", "key", "family", "handwritten", "truth", "pred", "confidence",

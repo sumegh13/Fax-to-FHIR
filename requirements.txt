@@ -1,2 +1,6 @@
 pillow
 numpy
+fastapi
+uvicorn
+python-multipart
+anthropic

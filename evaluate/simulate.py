@@ -34,22 +34,25 @@ def corrupt(value: str, rng: random.Random) -> str:
     return value
 
 
+def simulate_fax(truth: dict, seed: int = 0) -> dict:
+    """Simulated extraction for one fax. Keeps truth bboxes so the review screen can crop fields."""
+    rng = random.Random(f"{seed}:{truth['fax_id']}")
+    fields = []
+    for f in truth["fields"]:
+        p = ERR_RATE[truth["level"]] * (3 if f["handwritten"] else 1)
+        wrong = rng.random() < p
+        value = corrupt(f["value"], rng) if wrong else f["value"]
+        if value == "":
+            continue
+        # Confidence: errors usually look uncertain, but not always (that is what the review gate must handle).
+        base = rng.betavariate(2, 5) if wrong and rng.random() < 0.75 else rng.betavariate(9, 1.3)
+        conf = max(0.01, min(0.99, base - (0.08 if f["handwritten"] else 0)))
+        fields.append({"key": f["key"], "value": value, "confidence": round(conf, 3), "bbox": f["bbox"]})
+    return {"fax_id": truth["fax_id"], "doc_type": truth["doc_type"], "extractor": "simulated", "fields": fields}
+
+
 def simulate(out_dir: Path, seed: int = 0):
     out_dir.mkdir(parents=True, exist_ok=True)
     for tpath in sorted(FAXES.glob("*.truth.json")):
-        truth = json.loads(tpath.read_text())
-        rng = random.Random(f"{seed}:{truth['fax_id']}")
-        fields = []
-        for f in truth["fields"]:
-            p = ERR_RATE[truth["level"]] * (3 if f["handwritten"] else 1)
-            wrong = rng.random() < p
-            value = corrupt(f["value"], rng) if wrong else f["value"]
-            if value == "":
-                continue
-            # Confidence: errors usually look uncertain, but not always (that is what the review gate must handle).
-            base = rng.betavariate(2, 5) if wrong and rng.random() < 0.75 else rng.betavariate(9, 1.3)
-            conf = max(0.01, min(0.99, base - (0.08 if f["handwritten"] else 0)))
-            fields.append({"key": f["key"], "value": value, "confidence": round(conf, 3)})
-        (out_dir / f"{truth['fax_id']}.json").write_text(json.dumps(
-            {"fax_id": truth["fax_id"], "doc_type": truth["doc_type"], "extractor": "simulated", "fields": fields},
-            indent=1))
+        pred = simulate_fax(json.loads(tpath.read_text()), seed)
+        (out_dir / f"{pred['fax_id']}.json").write_text(json.dumps(pred, indent=1))
