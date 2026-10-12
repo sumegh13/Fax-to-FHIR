@@ -3,7 +3,8 @@
   "build": { "dockerfile": "Dockerfile" },
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/sshd:1": {}
   },
   // HAPI FHIR takes ~3 GB of heap; Synthea and the fax renderer like more cores.
   "hostRequirements": { "cpus": 4, "memory": "16gb" },
