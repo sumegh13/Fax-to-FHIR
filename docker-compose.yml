@@ -1,11 +1,26 @@
 services:
+  # The HAPI image runs as uid 65532; a fresh named volume is root-owned, so hand it over once.
+  hapi-volume-init:
+    image: alpine:3.20
+    command: chown -R 65532:65532 /data/hapi
+    volumes:
+      - hapi-data:/data/hapi
+
   hapi:
     image: hapiproject/hapi:latest
+    depends_on:
+      hapi-volume-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
       hapi.fhir.fhir_version: R4
       hapi.fhir.allow_external_references: "true"
+      # Store the database on the volume (the image default is in-memory and loses everything on restart).
+      spring.datasource.url: jdbc:h2:file:/data/hapi/h2
+      spring.datasource.username: sa
+      spring.datasource.password: ""
+      spring.datasource.driverClassName: org.h2.Driver
       JAVA_TOOL_OPTIONS: "-Xmx2560m"
     volumes:
       - hapi-data:/data/hapi

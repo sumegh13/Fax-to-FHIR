@@ -81,7 +81,7 @@ Synthea patients ──> faxgen ──> noisy fax PNG + truth.json
   same test and day is flagged.
 - **evaluate** scores predictions against truth per field, aligning list fields by content rather than position,
   and reports the review-gate trade-off and calibration.
-- **app** is the review screen: drop a fax, see uncertain fields highlighted on the page with a crop of each,
+- **app** is the review screen: drop a fax (PDF or image), see uncertain fields highlighted on the page with a crop of each,
   correct or confirm them, commit, and undo if needed. The server refuses to commit a low-confidence field nobody
   confirmed.
 
@@ -113,6 +113,12 @@ docker compose up -d
 Without an API key, `python -m evaluate simulate` produces a simulated extractor (ground truth with OCR-like
 corruption) and the review screen uses it, so the pipeline can be exercised offline.
 
+Tests (normalizers, scoring, FHIR mapping; offline, but the mapper tests need the Synthea data generated above):
+
+```sh
+.venv/bin/python -m pytest
+```
+
 Other commands:
 
 ```sh
@@ -129,5 +135,4 @@ Other commands:
   deployment needs a terminology server.
 - Test faxes are drawn from data already in each patient's chart, which makes the duplicate and lab-value checks
   fire more often than they would on genuinely new documents.
-- Uploads must be images (PNG, JPG, TIFF); PDF faxes need conversion first.
-- HAPI's database lives inside its container; recreating the container means reloading the patients.
+- Multi-page PDF faxes are accepted, but only the first page is read; the review screen says so.

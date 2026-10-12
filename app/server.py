@@ -2,7 +2,7 @@
 
     .venv/bin/uvicorn app.server:app --reload --port 8000
 
-Extraction is pluggable. Until a model is wired in, EXTRACTOR=simulated reads
+Extraction is pluggable: EXTRACTOR=claude reads any fax with Claude Haiku 5.5; EXTRACTOR=simulated reads
 the ground truth of a generated fax (matched by filename) and corrupts it, so
 only faxes from data/faxes/ can be processed.
 """
@@ -33,6 +33,7 @@ INBOX = ROOT / "data" / "inbox"
 EXTRACTOR = os.environ.get("EXTRACTOR", "claude" if os.environ.get("ANTHROPIC_API_KEY") else "simulated")
 THRESHOLD = float(os.environ.get("REVIEW_THRESHOLD", "0.8"))
 IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+FAX_DPI = 200  # fax "fine" mode; PDFs are rendered at this resolution
 
 app = FastAPI(title="Fax to FHIR")
 
@@ -88,19 +89,32 @@ def review_view(job_id: str, extraction: dict) -> dict:
 @app.post("/api/faxes")
 async def upload(file: UploadFile):
     ext = Path(file.filename or "").suffix.lower()
-    if ext not in IMAGE_TYPES:
-        raise HTTPException(415, "Upload a fax image (PNG, JPG or TIFF).")
+    if ext not in IMAGE_TYPES | {".pdf"}:
+        raise HTTPException(415, "Upload a fax as PDF, PNG, JPG or TIFF.")
     job_id = uuid.uuid4().hex[:12]
     d = INBOX / job_id
     d.mkdir(parents=True)
     raw = d / f"original{ext}"
     with raw.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
-    img = Image.open(raw)
+    pages = 1
+    if ext == ".pdf":
+        import pypdfium2
+        try:
+            pdf = pypdfium2.PdfDocument(raw)
+        except pypdfium2.PdfiumError:
+            raise HTTPException(422, "That PDF could not be opened. Check that it is not password-protected.")
+        pages = len(pdf)
+        img = pdf[0].render(scale=FAX_DPI / 72).to_pil()
+    else:
+        img = Image.open(raw)
     img.convert("L").save(d / "fax.png")
-    extraction = extract(raw, file.filename)
+    extraction = extract(d / "fax.png", file.filename)
     (d / "extraction.json").write_text(json.dumps(extraction))
     view = review_view(job_id, extraction)
+    if pages > 1:
+        view["issues"].append({"key": "fax", "value": pages,
+                               "reason": f"This fax has {pages} pages; only page 1 was read."})
     view["image"] = {"url": f"/api/faxes/{job_id}/image", "width": img.width, "height": img.height}
     return view
 
