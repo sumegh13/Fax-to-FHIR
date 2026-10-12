@@ -1,5 +1,7 @@
 # Fax to FHIR
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/sumegh13/Fax-to-FHIR?quickstart=1)
+
 Healthcare still runs on fax. Referrals, lab results and prior-authorization forms arrive as skewed, stamped,
 partly handwritten scans, and staff retype them into the EHR by hand.
 
@@ -87,7 +89,8 @@ Synthea patients ──> faxgen ──> noisy fax PNG + truth.json
 
 ## Try it in GitHub Codespaces
 
-1. On the repository page choose Code, Codespaces, Create codespace on main. A 4-core machine is requested.
+1. Click **Open in GitHub Codespaces** at the top of this page (or Code, Codespaces, Create codespace on main).
+   A 4-core machine is requested.
 2. The first start takes about 15 minutes: it installs dependencies, generates 50 synthetic patients and their
    faxes, and loads the FHIR server. Later starts take about a minute.
 3. The review screen opens on port 8000. To share it, open the Ports panel, right-click port 8000 and set
