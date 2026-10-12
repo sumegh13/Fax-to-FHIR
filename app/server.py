@@ -12,6 +12,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from dotenv import load_dotenv
 import anthropic
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -22,6 +23,8 @@ from pydantic import BaseModel
 from evaluate.simulate import simulate_fax
 from fhirmap import client
 from fhirmap.__main__ import prepare
+
+load_dotenv()  # .env at the repo root; real environment variables win
 
 ROOT = Path(__file__).resolve().parent.parent
 FAXES = ROOT / "data" / "faxes"

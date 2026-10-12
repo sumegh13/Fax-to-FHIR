@@ -11,9 +11,12 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from dotenv import load_dotenv
 import anthropic
 
 from .claude import extract
+
+load_dotenv()  # .env at the repo root; real environment variables win
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -30,9 +33,10 @@ def main():
     faxes = sorted((ROOT / "data" / "faxes").glob("*.png"))
     faxes = [f for f in faxes if not f.name.endswith(".boxes.png")]
     todo = [f for f in faxes if not (out / f"{f.stem}.json").exists()]
+    done = len(faxes) - len(todo)
     if args.limit:
         todo = todo[:args.limit]
-    print(f"{len(todo)} faxes to read ({len(faxes) - len(todo)} already done)")
+    print(f"{len(todo)} faxes to read ({done} already done)")
 
     client = anthropic.Anthropic()
     total, failed = 0.0, 0

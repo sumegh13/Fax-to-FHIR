@@ -7,7 +7,10 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
 from .normalize import strip_digits, to_date
+
+load_dotenv()  # .env at the repo root; real environment variables win
 
 BASE = os.environ.get("FHIR_BASE", "http://localhost:8080/fhir")
 COMMITS = Path(__file__).resolve().parent.parent / "data" / "commits"
