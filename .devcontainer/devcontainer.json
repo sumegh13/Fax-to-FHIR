@@ -16,12 +16,6 @@
   "postCreateCommand": "bash .devcontainer/setup.sh",
   // Every boot: start HAPI and the review screen.
   "postStartCommand": "bash .devcontainer/start.sh",
-  "secrets": {
-    "ANTHROPIC_API_KEY": {
-      "description": "Claude API key. Without it the app runs the simulated extractor.",
-      "documentationUrl": "https://platform.claude.com"
-    }
-  },
   "customizations": {
     "vscode": { "extensions": ["ms-python.python"] }
   }
