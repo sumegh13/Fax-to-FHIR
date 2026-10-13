@@ -24,5 +24,18 @@ services:
       JAVA_TOOL_OPTIONS: "-Xmx2560m"
     volumes:
       - hapi-data:/data/hapi
+
+  # Review screen, run by Docker so it outlives the shell that starts it (Codespaces uses this;
+  # locally, run uvicorn yourself). Reuses the repo's .venv, so the repo is mounted at its own path.
+  review:
+    image: python:3.11-slim-bookworm
+    profiles: [app]
+    network_mode: host  # port 8000 on the host; HAPI at localhost:8080
+    restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    working_dir: ${PWD}
+    volumes:
+      - .:${PWD}
+    command: .venv/bin/uvicorn app.server:app --host 0.0.0.0 --port 8000
 volumes:
   hapi-data:
